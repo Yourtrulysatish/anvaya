@@ -426,6 +426,7 @@ class PopImport(BaseModel):
     seed: int = 1
     enrich: bool = False
     description: str = Field(default="", max_length=8000)
+    market: Optional[dict] = None          # MarketSpec: brands, stores, marketing schedule, retailers, competitors (see sim/market.py)
 
 
 @router.post("/projects/{pid}/populations/import")
@@ -456,7 +457,7 @@ async def import_population(pid: str, p: PopImport, user=User):
         for a in agents: counts[a.segment] = counts.get(a.segment, 0) + 1
         pop = {"spec": spec.to_dict(), "agents": [asdict(a) for a in agents], "n": len(agents), "basis": spec.basis, "enriched": enriched,
                "segments": [{"name": sg.name, "share": counts.get(sg.name, 0) / len(agents), "count": counts.get(sg.name, 0), "description": sg.description} for sg in spec.segments],
-               "assumptions": spec.assumptions, "warnings": warnings, "description": p.description or spec.description}
+               "assumptions": spec.assumptions, "warnings": warnings, "description": p.description or spec.description, "market": p.market}
         get_store().put("population", pop_id, pop, user["id"], pid)
         return {"population_id": pop_id, "n": len(agents), "basis": spec.basis, "warnings": warnings}
     return start_job("population", pid, user["id"], job)
@@ -534,7 +535,7 @@ class SimIn(BaseModel):
     llm_text_per_round: int = Field(default=0, ge=0, le=60)   # 0 = LLM writes every message
 
 
-async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, scenario_id: str = None) -> dict:
+async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, scenario_id: str = None, market_over: dict = None) -> dict:
     pop = _get_pop(pid, s.population_id)
     rounds = min(s.rounds, settings.max_rounds)
     running = [r for r in RUNS.values() if r.status in ("running", "paused") and (get_store().get("simulation", r.cfg.simulation_id) or {}).get("_owner") == user["id"]]
@@ -545,7 +546,7 @@ async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, sce
     sid = new_id("sim")
     agents = scen.agents_from_pop(pop)
     cfg = SimConfig(sid, seed=s.seed, rounds=rounds, topics=scen.topics_from_pop(pop), shocks=[scen.shock_from_dict(x) for x in (shocks or [])],
-                    llm_agents_per_round=s.llm_agents_per_round if use_llm else 0, max_actions_per_round=s.max_actions_per_round, mode="native", title=s.name, description=pop.get("description", ""))
+                    llm_agents_per_round=s.llm_agents_per_round if use_llm else 0, max_actions_per_round=s.max_actions_per_round, mode="native", market=scen.market_spec(pop, market_over), title=s.name, description=pop.get("description", ""))
     budget = Budget(s.budget_calls or (DEFAULT_MAX_CALLS if use_llm else 0), s.budget_tokens, provider if use_llm else None)
     run = SimulationRun(agents, cfg, store=get_store(), provider=provider if use_llm else None, use_llm=use_llm, project_id=pid, budget=budget, round_delay=s.round_delay, llm_text_per_round=s.llm_text_per_round)
     doc = {"name": s.name, "population_id": s.population_id, "status": "created", "config": {"rounds": rounds, "seed": s.seed, "use_llm": use_llm, "llm_agents_per_round": cfg.llm_agents_per_round,
@@ -567,12 +568,12 @@ async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, sce
 @router.post("/projects/{pid}/simulations")
 async def start_simulation(pid: str, s: SimIn, user=User):
     own_project(pid, user)
-    shocks = None
+    shocks, sc = None, None
     if s.scenario_id:
         sc = get_store().get("scenario", s.scenario_id)
         if not sc or sc["_project"] != pid: raise HTTPException(404, "Scenario not found")
         shocks = sc.get("shocks", [])
-    return await _launch(pid, user, s, shocks, s.scenario_id)
+    return await _launch(pid, user, s, shocks, s.scenario_id, (sc or {}).get("market") if s.scenario_id else None)
 
 
 def _sim_view(s: dict, with_agents: bool = True) -> dict:
@@ -710,6 +711,7 @@ class ScenarioIn(BaseModel):
     rounds: int = Field(default=20, ge=2, le=100)
     shocks: Optional[list[dict]] = None          # explicit, user-specified assumptions (skips interpretation)
     assumptions: list[str] = Field(default_factory=list, max_length=40)
+    market: Optional[dict] = None                # overrides merged over the population's MarketSpec (marketing schedule, prices, listings, budgets…)
 
 
 @router.post("/projects/{pid}/scenarios/propose")
@@ -738,7 +740,7 @@ async def create_scenario(pid: str, s: ScenarioIn, user=User):
             raise HTTPException(422, "Could not turn this into a concrete assumption; try rephrasing")
     sid = new_id("scn")
     doc = {"name": s.name, "kind": s.kind, "prompt": s.prompt, "population_id": s.population_id, "rounds": s.rounds, "shocks": shocks, "assumptions": assumptions,
-           "interpretation": method, "rationale": rationale, "results": None, "status": "draft"}
+           "interpretation": method, "rationale": rationale, "market": s.market, "results": None, "status": "draft"}
     get_store().put("scenario", sid, doc, user["id"], pid)
     return {"id": sid, **doc}
 
@@ -776,17 +778,18 @@ async def run_scenario(sid: str, r: RunScenario, user=User):
     async def job(update):
         st = get_store()
         update(0.1, "Running baseline replicates…")
+        mo = sc.get("market")
         base_runs = await scen.monte_carlo(pop, [], sc["rounds"], seeds)
         update(0.4, "Running scenario replicates…")
-        runs = base_runs if not sc["shocks"] else await scen.monte_carlo(pop, sc["shocks"], sc["rounds"], seeds)
+        runs = base_runs if not (sc["shocks"] or mo) else await scen.monte_carlo(pop, sc["shocks"], sc["rounds"], seeds, mo)
         res = {"summary": scen.summarise_runs(runs), "baseline_summary": scen.summarise_runs(base_runs), "replicates": r.replicates,
-               "comparison": scen.compare(base_runs, runs) if sc["shocks"] else None, "monte_carlo_runs": [{k: v for k, v in x.items() if k != "segments"} for x in runs]}
+               "comparison": scen.compare(base_runs, runs) if (sc["shocks"] or mo) else None, "monte_carlo_runs": [{k: v for k, v in x.items() if k != "segments"} for x in runs]}
         if r.sensitivity and sc["shocks"]:
             update(0.7, "Sensitivity analysis…")
-            res["sensitivity"] = await scen.sensitivity(pop, sc["shocks"], sc["rounds"], seeds[:6])
+            res["sensitivity"] = await scen.sensitivity(pop, sc["shocks"], sc["rounds"], seeds[:6], market_over=mo)
         if r.visible_run:
             update(0.9, "Recording a replayable run…")
-            out = await _launch(pid, user, SimIn(population_id=sc["population_id"], name=f"Scenario: {sc['name']}", rounds=sc["rounds"], seed=seeds[0], use_llm=False), sc["shocks"], sid)
+            out = await _launch(pid, user, SimIn(population_id=sc["population_id"], name=f"Scenario: {sc['name']}", rounds=sc["rounds"], seed=seeds[0], use_llm=False), sc["shocks"], sid, mo)
             res["simulation_id"] = out["id"]
         d = _strip(st.get("scenario", sid)); d["results"], d["status"] = res, "complete"
         st.put("scenario", sid, d, user["id"], pid)

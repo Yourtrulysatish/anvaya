@@ -169,6 +169,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
               <Spark ends={visibleEnds} />
             </>) : <div className="text-xs text-silver-500">Metrics appear at the end of round 1.</div>}
           </div>
+          {m?.market && <MarketPanel mk={m.market} />}
           {dataset.meta.synthetic && (
             <div className="rounded-lg border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] leading-relaxed text-silver-300">
               Synthetic demonstration. Agents, text and the round-9 price cut come from a seeded model: no LLM, no real people, not a forecast.
@@ -200,7 +201,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
           <button onClick={() => setFeedOpen(o => !o)} aria-label="Toggle feed" className="absolute -left-9 top-3 grid h-8 w-8 place-items-center rounded-lg border border-line bg-ink-900/90 text-silver-300">{feedOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>
           <div className="flex items-center justify-between border-b hairline px-4 py-3"><span className="label">Activity feed</span><span className="font-mono text-[10px] text-silver-500">{ui.cursor} / {ui.total} events</span></div>
           <div className="flex flex-wrap gap-1 border-b hairline px-3 py-2">
-            {['post', 'reply', 'agree', 'disagree', 'share', 'opinion_change', 'join_group'].map(t => {
+            {['post', 'reply', 'agree', 'disagree', 'share', 'opinion_change', 'join_group', ...(m?.market ? ['funnel_change', 'listing_decision', 'competitor_action'] : [])].map(t => {
               const on = filter.has(t)
               return <button key={t} onClick={() => setFilter(f => { const n = new Set(f); on ? n.delete(t) : n.add(t); if (t === 'join_group') on ? n.delete('leave_group') : n.add('leave_group'); return n })}
                 className={`chip ${on ? 'chip-on' : ''}`} style={on ? { borderColor: TYPE_META[t].color + '88' } : {}}><i className="h-1.5 w-1.5 rounded-full" style={{ background: TYPE_META[t].color }} />{TYPE_META[t].label.toLowerCase()}</button>
@@ -275,6 +276,25 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
   )
 }
 
+const FUNNEL_COLORS: Record<string, string> = { unaware: '#3a4152', aware: '#8A93A3', considering: '#A78BFA', trial: '#3DDCFF', repeat: '#6EE7B7', advocate: '#F5C26B', rejecter: '#FF5C7A' }
+function MarketPanel({ mk }: { mk: any }) {
+  const total = Object.values(mk.funnel).reduce((a: number, b: any) => a + b, 0) as number || 1
+  const shares = Object.entries(mk.share_cumulative as Record<string, number>).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  return (
+    <div className="panel rounded-xl p-3">
+      <div className="label mb-2">Market funnel · computed</div>
+      <div className="mb-2 flex h-2 overflow-hidden rounded-full bg-ink-700">{Object.entries(mk.funnel).map(([k, v]: any) => <div key={k} title={`${k}: ${v}`} style={{ width: `${(v / total) * 100}%`, background: FUNNEL_COLORS[k] }} />)}</div>
+      <div className="mb-2 flex flex-wrap gap-x-2 font-mono text-[9.5px] text-silver-500">{Object.entries(mk.funnel).filter(([, v]: any) => v > 0).map(([k, v]: any) => <span key={k}><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full" style={{ background: FUNNEL_COLORS[k] }} />{k} {v}</span>)}</div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+        <Stat k="Awareness" v={`${(mk.awareness * 100).toFixed(0)}%`} small /><Stat k="Ever tried" v={`${(mk.ever_tried * 100).toFixed(0)}%`} small />
+        <Stat k="Repeat+advocate" v={`${(mk.repeat_or_advocate * 100).toFixed(0)}%`} small /><Stat k="Listed at" v={`${mk.listed_count} retailers`} small />
+      </div>
+      <div className="label mb-1 mt-2.5">Share of purchases (cumulative)</div>
+      {shares.map(([b, v]) => <div key={b} className="flex items-center gap-2 text-[11px]"><span className="w-20 truncate text-silver-300">{b}</span><div className="h-1 flex-1 rounded bg-ink-700"><div className="h-1 rounded bg-violet" style={{ width: `${v * 100}%` }} /></div><span className="w-9 text-right font-mono text-silver-500">{(v * 100).toFixed(0)}%</span></div>)}
+      {mk.promotions_active?.length > 0 && <div className="mt-1.5 font-mono text-[10px] text-coral">promo: {mk.promotions_active.join(', ')}</div>}
+    </div>
+  )
+}
 function Stat({ k, v, small }: { k: string; v: string; small?: boolean }) {
   return <div><div className="label !text-[9.5px]">{k}</div><div className={`font-mono ${small ? 'text-[13px]' : 'text-lg'} text-silver-100`}>{v}</div></div>
 }

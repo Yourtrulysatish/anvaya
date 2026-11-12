@@ -9,6 +9,7 @@ Describe a situation → ANVAYA reads your sources, builds an artificial society
 |---|---|
 | Observatory | Canvas of hundreds of agents; animated particles per event type; Social / Influence / Network modes; inspector; interviews (live mode); feed; play/pause/resume/stop/restart/step ±/0.5–4×/timeline/replay |
 | Intelligence | PDF · DOCX · XLSX · CSV · JSON · TXT · MD · URLs → entities, relations, facts (historical/current/assumption) with source quotes, contradictions, knowledge-graph explorer |
+| Market layer | purchase funnel (unaware → … → advocate), Bass-style awareness, multinomial-logit brand choice by store, retailer listing decisions, budget-limited competitor promotions → awareness, trial, repeat, share, revenue index |
 | Analytics | method selection, descriptive/trend stats, paired Monte Carlo scenarios, sensitivity, Bayesian summaries |
 | Decisions & reports | ranked recommendations (impact/feasibility/urgency/risk) → 15-section report with FACT / ANALYSIS / ESTIMATE / SIMULATION / RECOMMENDATION labels; PDF, Markdown, CSV |
 | Model provider | FreeModel.in (verified OpenAI-compatible), per-task models, connection test, retries, rate limits, token & cost tracking — key stays on the backend |

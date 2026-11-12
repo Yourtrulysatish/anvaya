@@ -8,6 +8,7 @@ from typing import Optional
 
 from ..db import Store
 from .engine import Agent, Engine, SimConfig
+from .market import Market
 from .writers import LLMWriter, TemplateWriter
 
 
@@ -38,6 +39,7 @@ class SimulationRun:
         self.budget = budget or Budget(provider=provider)
         self.writer = LLMWriter(self.engine, provider, project_id, budget=self.budget, max_items=llm_text_per_round) if self.use_llm else TemplateWriter(self.engine)
         self.round_delay = round_delay
+        self.market = Market(self.engine, cfg.market) if cfg.market else None
         self.events: list[dict] = []
         self._pending: list[dict] = []
         self.seq = 0
@@ -107,7 +109,8 @@ class SimulationRun:
             self.emit("sim_start", content=cfg.title or "Simulation started", content_source="engine",
                       result={"agents": len(e.agents), "rounds": cfg.rounds, "topics": [t.__dict__ for t in e.topics.values()],
                               "edges": e.edges(), "mode": cfg.mode, "llm": self.use_llm,
-                              "llm_agents_per_round": cfg.llm_agents_per_round, "shocks": [s.to_dict() for s in cfg.shocks]})
+                              "llm_agents_per_round": cfg.llm_agents_per_round, "shocks": [s.to_dict() for s in cfg.shocks],
+                              "market": ({"focal": self.market.focal, "brands": list(self.market.brands), "retailers": list(self.market.listed), "consumers": len(self.market.cons)} if self.market else None)})
             self._flush()
             for rnd in range(1, cfg.rounds + 1):
                 if self._stop:
@@ -128,7 +131,10 @@ class SimulationRun:
                 e.apply(intents, rnd, self.emit)
                 if rnd % 3 == 0 or rnd == 1:
                     e.update_groups(rnd, self.emit)
+                mk = self.market.step(rnd, self.emit) if self.market else None
                 m = e.metrics()
+                if mk:
+                    m["market"] = mk
                 m["active_agents"] = len({it.source for it in intents if it.type != "ignore"})
                 m["round_interactions"] = sum(1 for it in intents if it.type != "ignore")
                 infl = e.influence_scores()
@@ -150,6 +156,8 @@ class SimulationRun:
             final["group_names"] = {str(k): v for k, v in e.group_names.items()}
             self.status = "stopped" if self._stop else "completed"
             final["status"] = self.status
+            if self.market:
+                final["market"] = self.market.snapshot(cfg.rounds)
             if self.use_llm:
                 c, t = self.budget.used()
                 final["llm_usage"] = {"calls": c, "tokens": t, "model": getattr(self.writer, "model", None)}

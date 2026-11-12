@@ -11,3 +11,9 @@
 - M10: CI (pytest + demo reproducibility + frontend build + secret scan), Pages workflow, Dockerfile + Render blueprint, docs.
 
 **Test status:** `pytest` 38 passed (provider, engine determinism/invariants, pause/stop, adapters, security, SSRF, upload validation, full offline API pipeline incl. SSE resume, exports). Frontend: `tsc -b` + `vite build` clean. Manual: UI flow (new analysis → LLM population → simulation) verified in a browser against a local backend.
+
+**2026-11-12 (later)**
+- Vegeta-NL study: 155-agent Dutch food-market society, six events, scenarios A/B/C + two pricing variants (12 paired replicates each), LLM-written messages for a sample, top-10 recommendations (claude-sonnet-5-5), 15-section report.
+- Fixes found while doing it: truncated JSON now retried with a larger output budget; recommendation output scales with count; event-impact windows no longer overlap the next event (one recommendation cited a confounded number — flagged in the report).
+- New platform capabilities: population-spec import (named agents, fixed counts, per-topic salience), explicit scenario assumptions, per-round LLM text cap, caller-supplied computed context for recommendations.
+- **Market layer** (funnel, MNL brand choice, retailer listing, endogenous competitor promotions) with 10 tests; UI shows funnel/share panel and new event types; Insights shows the market trajectory. Found and fixed two modelling errors: word of mouth flooding from merely-aware agents, and annual Bass coefficients applied per weekly round.

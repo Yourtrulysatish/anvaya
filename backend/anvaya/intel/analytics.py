@@ -144,8 +144,24 @@ def analyse_events(events: list[dict], agents: list[dict], topic: str) -> dict:
     seg_of = {str(a["id"]): a["segment"] for a in agents}
     opinion_changes = [e for e in events if e["type"] == "opinion_change"]
     flips = Counter((e["result"]["from_band"], e["result"]["to_band"]) for e in opinion_changes)
+    market = None
+    mk_rounds = [e for e in ends if (e["result"] or {}).get("market")]
+    if mk_rounds:
+        fin_m = ((final or {}).get("result") or {}).get("market") or mk_rounds[-1]["result"]["market"]
+        market = {
+            "trajectory": [{"round": e["round"], "awareness": e["result"]["market"]["awareness"], "ever_tried": e["result"]["market"]["ever_tried"],
+                            "repeat_or_advocate": e["result"]["market"]["repeat_or_advocate"], "focal_share_round": e["result"]["market"]["focal_share_round"],
+                            "focal_revenue": e["result"]["market"]["focal_revenue"], "listed_count": e["result"]["market"]["listed_count"], "funnel": e["result"]["market"]["funnel"],
+                            "promotions_active": e["result"]["market"]["promotions_active"]} for e in mk_rounds],
+            "final": fin_m,
+            "listing_decisions": [{"round": e["round"], "retailer": e["result"]["retailer"], "listed": e["result"]["listed"], "reason": e["reason"]} for e in events if e["type"] == "listing_decision"],
+            "competitor_actions": [{"round": e["round"], "brand": e["result"]["brand"], "discount": e["result"]["discount"], "reason": e["reason"]} for e in events if e["type"] == "competitor_action"],
+            "first_trials": sum(1 for e in events if e["type"] == "funnel_change" and e["result"].get("to") == "trial"),
+            "advocates": sum(1 for e in events if e["type"] == "funnel_change" and e["result"].get("to") == "advocate"),
+            "rejecters": sum(1 for e in events if e["type"] == "funnel_change" and e["result"].get("to") == "rejecter"),
+        }
     return {
-        "trajectory": traj, "interaction_counts": dict(by_type), "segments": segments,
+        "market": market, "trajectory": traj, "interaction_counts": dict(by_type), "segments": segments,
         "largest_cascades": cascades[:5], "cascade_count": len(sizes), "shock_responses": shocks,
         "top_influencers": [{"agent": int(i), "name": name.get(i, i), "segment": seg_of.get(i), "score": s} for i, s in top],
         "opinion_band_changes": [{"from": a, "to": b, "count": c} for (a, b), c in flips.most_common()],

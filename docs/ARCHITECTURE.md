@@ -27,6 +27,15 @@ frontend/ (React 19 + TS + Tailwind 4, Canvas2D + d3-force)        backend/anvay
   polarisation/consensus/modularity from opinions and ties. The canvas only animates recorded events; scrubbing reconstructs state purely from `state_changes`.
 * **Budgets/cost:** per-run call/token budget (LLM falls back to labelled templates when exhausted), per-user daily LLM-job quota, client-side rate limiter, usage + estimated cost per task/model.
 
+## Market layer (`sim/market.py`)
+Optional layer on top of the opinion model (enabled by a `market` spec on a population; scenarios can override parts of it).
+* **Funnel:** unaware → aware → considering → trial → repeat → advocate (or rejecter). Word of mouth spreads only from agents who are considering/using the brand.
+* **Awareness:** Bass-style (external marketing + word of mouth). Default annual coefficients p=0.03, q=0.38 (commonly cited meta-analysis values, from a secondary source — verify) converted to per-round rates (`rounds_per_year`, default 52).
+* **Purchase:** multinomial-logit brand choice among brands *available at the agent's store*: price × price-sensitivity, Guadagni–Little-style loyalty to the usual brand, quality × taste-fit, plus opinion/consideration for the focal brand. Unaware agents and rejecters cannot choose it.
+* **Retailers** list when stance and shopper demand clear thresholds (or by an explicit negotiated `list_at` round) and delist after repeated low share; **competitors** run budget-limited promotions when the focal share crosses a trigger.
+* Emits `funnel_change`, `listing_decision`, `competitor_action` events (each with a computed `reason`) and a `market` block in every `round_end` (funnel, awareness, shares, revenue index, listings). Monte Carlo/scenario results include these metrics with paired differences.
+* All spec numbers are assumptions unless the caller supplies data; no market statistics are bundled.
+
 ## Normalised event (`sim/runner.py`)
 `id, seq, simulation_id, round, type, source_agent, target_agent, agents[], topic, content, content_source, reason, result{}, state_changes{opinion, relationships, sentiment, group}, timestamp, provenance{engine, mode, seed}, cause_event?`
 Types: `sim_start round_start external_event post reply agree disagree share cascade opinion_change relationship_change join_group leave_group round_end sim_pause sim_resume sim_end error`.

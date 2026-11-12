@@ -248,6 +248,15 @@ export class UniverseRenderer {
         break
       case 'join_group': if (s != null) this.pulses.push({ id: s, t: 0, dur: base * 1.2, color: COLORS.accent, maxR: 18, width: 1.4 }); break
       case 'relationship_change': if (s != null && t != null) { this.bump(s, t, COLORS.agree, 1); this.pulses.push({ id: s, t: 0, dur: base, color: COLORS.agree, maxR: 18, width: 1.2 }, { id: t, t: 0, dur: base, color: COLORS.agree, maxR: 18, width: 1.2 }) } break
+      case 'funnel_change':
+        if (s != null) {
+          this.pulses.push({ id: s, t: 0, dur: base * 1.2, color: '#6EE7B7', maxR: 26, width: 2.2 })
+          if (t != null) this.particles.push({ a: s, b: t, t: 0, dur: base, delay: 0, color: '#6EE7B7', kind: 'msg', onArrive: () => { this.pulses.push({ id: t, t: 0, dur: base * 0.8, color: '#6EE7B7', maxR: 20, width: 1.6 }); this.bump(s, t, '#6EE7B7') } })
+          if (ev.content) this.bubbles.push({ id: s, text: ev.content, t: 0, dur: 2.6 / Math.sqrt(this.speed), color: '#6EE7B7' })
+        }
+        break
+      case 'listing_decision': if (s != null) { this.pulses.push({ id: s, t: 0, dur: base * 2, color: ev.result.listed ? '#60A5FA' : '#FF5C7A', maxR: 56, width: 3.4 }); this.bubbles.push({ id: s, text: ev.content, t: 0, dur: 4 / Math.sqrt(this.speed), color: '#60A5FA' }) } break
+      case 'competitor_action': if (s != null) { this.pulses.push({ id: s, t: 0, dur: base * 2, color: '#FF7A59', maxR: 50, width: 3 }); this.bubbles.push({ id: s, text: ev.content, t: 0, dur: 4 / Math.sqrt(this.speed), color: '#FF7A59' }) } break
       case 'cascade': if (s != null) this.pulses.push({ id: s, t: 0, dur: base * 2, color: COLORS.cascade, maxR: 60, width: 3 }); break
       case 'external_event':
         this.shocks.push({ t: 0, dur: 2.4 })

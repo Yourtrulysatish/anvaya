@@ -1,6 +1,6 @@
 export type EventType =
   | 'sim_start' | 'round_start' | 'external_event' | 'post' | 'reply' | 'agree' | 'disagree' | 'share' | 'cascade'
-  | 'opinion_change' | 'relationship_change' | 'join_group' | 'leave_group' | 'round_end' | 'sim_pause' | 'sim_resume'
+  | 'opinion_change' | 'relationship_change' | 'join_group' | 'leave_group' | 'funnel_change' | 'listing_decision' | 'competitor_action' | 'round_end' | 'sim_pause' | 'sim_resume'
   | 'sim_end' | 'error'
 
 export interface StateChanges {

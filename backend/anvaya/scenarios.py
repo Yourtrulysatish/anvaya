@@ -22,6 +22,14 @@ def agents_from_pop(pop: dict) -> list[Agent]:
     return out
 
 
+def market_spec(pop: dict, over: dict = None):
+    from .sim.market import merge_spec
+    base = pop.get("market")
+    if not base and not over:
+        return None
+    return merge_spec(base or {}, over)
+
+
 def topics_from_pop(pop: dict) -> list[Topic]:
     return [Topic(**t) for t in pop["spec"]["topics"]]
 
@@ -30,9 +38,10 @@ def shock_from_dict(d: dict) -> Shock:
     return Shock(**{k: v for k, v in d.items() if k in Shock.__dataclass_fields__})
 
 
-def _run_sync(pop: dict, shocks: list[dict], rounds: int, seed: int) -> dict:
+def _run_sync(pop: dict, shocks: list[dict], rounds: int, seed: int, market_over: dict = None) -> dict:
     agents = agents_from_pop(pop)
-    cfg = SimConfig(f"mc-{seed}", seed=seed, rounds=rounds, topics=topics_from_pop(pop), shocks=[shock_from_dict(s) for s in shocks], mode="native")
+    mk = market_spec(pop, market_over)
+    cfg = SimConfig(f"mc-{seed}", seed=seed, rounds=rounds, topics=topics_from_pop(pop), shocks=[shock_from_dict(s) for s in shocks], mode="native", market=mk)
     run = SimulationRun(agents, cfg)
     asyncio.run(run.run())
     end = run.events[-1]["result"]
@@ -42,17 +51,23 @@ def _run_sync(pop: dict, shocks: list[dict], rounds: int, seed: int) -> dict:
     for aid, op in end["final_opinions"].items():
         seg[by_id[int(aid)].segment].append(op)
     n = len(agents)
-    return {"seed": seed, "mean_opinion": end["mean_opinion"], "polarisation": end["polarisation"], "support_share": end["support"] / n,
+    out_m = {}
+    if end.get("market"):
+        m = end["market"]
+        out_m = {"awareness": m["awareness"], "ever_tried": m["ever_tried"], "repeat_or_advocate": m["repeat_or_advocate"], "focal_share": m["share_cumulative"][run.market.focal],
+                 "focal_revenue": m["focal_revenue"], "focal_units": m["focal_units"], "listed_count": m["listed_count"]}
+    return {**out_m, "seed": seed, "mean_opinion": end["mean_opinion"], "polarisation": end["polarisation"], "support_share": end["support"] / n,
             "oppose_share": end["oppose"] / n, "groups": end["groups"], "max_cascade": end["max_cascade"], "interactions": end["interactions_total"],
             "modularity": end["modularity"], "segments": {k: sum(v) / len(v) for k, v in seg.items()}, "topic": topic}
 
 
-async def monte_carlo(pop: dict, shocks: list[dict], rounds: int, seeds: list[int]) -> list[dict]:
-    return list(await asyncio.gather(*[asyncio.to_thread(_run_sync, pop, shocks, rounds, s) for s in seeds]))
+async def monte_carlo(pop: dict, shocks: list[dict], rounds: int, seeds: list[int], market_over: dict = None) -> list[dict]:
+    return list(await asyncio.gather(*[asyncio.to_thread(_run_sync, pop, shocks, rounds, s, market_over) for s in seeds]))
 
 
 def summarise_runs(runs: list[dict]) -> dict:
     keys = ["mean_opinion", "polarisation", "support_share", "oppose_share", "groups", "max_cascade", "interactions", "modularity"]
+    keys += [k for k in ("awareness", "ever_tried", "repeat_or_advocate", "focal_share", "focal_revenue", "focal_units", "listed_count") if k in runs[0]]
     out = {k: analytics.summarise([r[k] for r in runs]) for k in keys}
     segs = defaultdict(list)
     for r in runs:
@@ -67,6 +82,7 @@ def compare(base_runs: list[dict], var_runs: list[dict]) -> dict:
     n = min(len(base_runs), len(var_runs))
     b, v = base_runs[:n], var_runs[:n]
     keys = ["mean_opinion", "polarisation", "support_share", "oppose_share", "groups", "max_cascade", "interactions"]
+    keys += [k for k in ("awareness", "ever_tried", "repeat_or_advocate", "focal_share", "focal_revenue", "listed_count") if k in b[0] and k in v[0]]
     diffs = {k: analytics.paired_difference([r[k] for r in b], [r[k] for r in v]) for k in keys}
     seg = {}
     for s in b[0]["segments"]:
@@ -77,14 +93,14 @@ def compare(base_runs: list[dict], var_runs: list[dict]) -> dict:
                             "of change within the simulated society, not probabilities about the real world.")}
 
 
-async def sensitivity(pop: dict, shocks: list[dict], rounds: int, seeds: list[int], scales=(0.0, 0.5, 1.0, 1.5, 2.0)) -> list[dict]:
+async def sensitivity(pop: dict, shocks: list[dict], rounds: int, seeds: list[int], scales=(0.0, 0.5, 1.0, 1.5, 2.0), market_over: dict = None) -> list[dict]:
     out = []
     for sc in scales:
         sh = copy.deepcopy(shocks)
         for s in sh:
             for e in s["effects"]:
                 e["delta"] = e["delta"] * sc
-        runs = await monte_carlo(pop, sh, rounds, seeds)
+        runs = await monte_carlo(pop, sh, rounds, seeds, market_over)
         sm = analytics.summarise([r["mean_opinion"] for r in runs])
         out.append({"scale": sc, "mean_opinion": sm["mean"], "se": sm["se"], "support_share": analytics.summarise([r["support_share"] for r in runs])["mean"]})
     return out
