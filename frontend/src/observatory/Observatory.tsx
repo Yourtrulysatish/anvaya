@@ -21,6 +21,7 @@ interface Props {
   compact?: boolean
   autoplay?: boolean
   live?: LiveControls
+  initialMode?: Mode
 }
 
 const SPEEDS = [0.5, 1, 2, 4]
@@ -30,7 +31,7 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
   { id: 'network', label: 'Network', hint: 'The whole interconnected ecosystem, coloured by community' },
 ]
 
-export function Observatory({ dataset, playback, compact, autoplay, live }: Props) {
+export function Observatory({ dataset, playback, compact, autoplay, live, initialMode }: Props) {
   const topic = dataset.events.find(e => e.type === 'sim_start')?.result.topics?.[0]?.id ?? Object.keys(dataset.agents[0]?.opinions ?? { t1: 0 })[0]
   const pb = useMemo(() => {
     if (playback) return playback
@@ -43,7 +44,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live }: Prop
   const rendRef = useRef<UniverseRenderer | null>(null)
   const elapsed = useRef(0)
   const [ui, setUi] = useState({ cursor: 0, total: 0, playing: false, speed: 1, version: 0 })
-  const [mode, setMode] = useState<Mode>('social')
+  const [mode, setMode] = useState<Mode>(initialMode ?? 'social')
   const [selected, setSelected] = useState<number | null>(null)
   const [selEvent, setSelEvent] = useState<SimEvent | null>(null)
   const [filter, setFilter] = useState<Set<string>>(new Set(feedTypes))

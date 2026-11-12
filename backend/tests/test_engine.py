@@ -91,3 +91,9 @@ def test_pause_stop_semantics():
     assert r.status == "stopped" and r.events[-1]["type"] == "sim_end"
     types = [e["type"] for e in r.events]
     assert "sim_pause" in types and "sim_resume" in types
+
+
+def test_event_payloads_are_json_stable():
+    """In-memory events must equal their JSON round-trip (string keys), so analysis is identical live vs. from the database."""
+    r = run_sim(rounds=6)
+    assert json.loads(json.dumps(r.events)) == r.events

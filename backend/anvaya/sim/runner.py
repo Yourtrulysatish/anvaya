@@ -144,7 +144,7 @@ class SimulationRun:
                 else:
                     await asyncio.sleep(0)
             final = e.metrics()
-            final["influence"] = e.influence_scores()
+            final["influence"] = {str(k): v for k, v in e.influence_scores().items()}
             final["final_opinions"] = {str(i): round(a.opinions.get(final["topic"], 0), 3) for i, a in e.agents.items()}
             final["agent_groups"] = {str(i): a.group for i, a in e.agents.items()}
             final["group_names"] = {str(k): v for k, v in e.group_names.items()}
