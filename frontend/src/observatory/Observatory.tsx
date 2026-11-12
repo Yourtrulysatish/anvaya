@@ -22,6 +22,8 @@ interface Props {
   autoplay?: boolean
   live?: LiveControls
   initialMode?: Mode
+  /** 'live' (default): self-running, no transport buttons, finished replays loop. 'full': play/pause/step/timeline. */
+  controls?: 'live' | 'full'
 }
 
 const SPEEDS = [0.5, 1, 2, 4]
@@ -31,7 +33,7 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
   { id: 'network', label: 'Network', hint: 'The whole interconnected ecosystem, coloured by community' },
 ]
 
-export function Observatory({ dataset, playback, compact, autoplay, live, initialMode }: Props) {
+export function Observatory({ dataset, playback, compact, autoplay, live, initialMode, controls = 'live' }: Props) {
   const topic = dataset.events.find(e => e.type === 'sim_start')?.result.topics?.[0]?.id ?? Object.keys(dataset.agents[0]?.opinions ?? { t1: 0 })[0]
   const pb = useMemo(() => {
     if (playback) return playback
@@ -48,6 +50,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
   const [selected, setSelected] = useState<number | null>(null)
   const [selEvent, setSelEvent] = useState<SimEvent | null>(null)
   const [filter, setFilter] = useState<Set<string>>(new Set(feedTypes))
+  const [showControls, setShowControls] = useState(controls === 'full')
   const [feedOpen, setFeedOpen] = useState(!compact && typeof window !== 'undefined' && window.innerWidth >= 1024)
   const [hover, setHover] = useState<{ id: number; x: number; y: number } | null>(null)
 
@@ -60,17 +63,23 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
     rendRef.current = r
     pb.onEvent = ev => r.handleEvent(ev)
     let raf = 0, last = performance.now()
+    let endedAt = 0
     const loop = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t
       pb.tick(dt); if (pb.playing) elapsed.current += dt
+      // self-running presentation: a finished *replay* restarts after a short beat (a live backend run just waits for new events)
+      if (controls === 'live' && !pb.live && pb.total > 1 && pb.atEnd) {
+        if (!endedAt) endedAt = t
+        else if (t - endedAt > 3500) { pb.restart(true); r.clearEffects(); elapsed.current = 0; endedAt = 0 }
+      } else endedAt = 0
       r.state = pb.state; r.speed = pb.speed
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
     const iv = setInterval(() => setUi(u => (u.cursor === pb.cursor && u.playing === pb.playing && u.speed === pb.speed && u.total === pb.total && pb.state.round === u.version ? u : { cursor: pb.cursor, total: pb.total, playing: pb.playing, speed: pb.speed, version: pb.state.round })), 110)
-    if (autoplay) pb.playing = true
+    if (autoplay || controls === 'live') { pb.playing = true; if (controls === 'live') pb.speed = 2 }
     return () => { cancelAnimationFrame(raf); clearInterval(iv); r.destroy(); pb.onEvent = undefined; pb.playing = false }
-  }, [dataset, pb, autoplay])
+  }, [dataset, pb, autoplay, controls])
 
   useEffect(() => { rendRef.current?.setMode(mode) }, [mode])
   useEffect(() => {
@@ -239,8 +248,20 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
           onSelectAgent={id => { setSelected(id); rendRef.current?.focus([id]) }} />
       )}
 
-      {/* controls */}
-      {!compact && (
+      {/* self-running status bar (default) */}
+      {!compact && !showControls && (
+        <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl panel px-4 py-2.5">
+          <span className="flex items-center gap-2 font-mono text-[11px] tracking-[0.16em] text-cyan"><i className="h-2 w-2 animate-pulse rounded-full bg-cyan" />LIVE</span>
+          <span className="font-mono text-[11px] text-silver-500">{dataset.meta.synthetic ? 'DEMO · continuous replay of recorded synthetic events' : live && live.status === 'running' ? 'simulation running' : live ? `run ${live.status}` : 'replay of recorded events'}</span>
+          <div className="mx-2 h-1 flex-1 overflow-hidden rounded bg-ink-700"><div className="h-1 rounded bg-violet/70" style={{ width: `${ui.total ? (ui.cursor / ui.total) * 100 : 0}%` }} /></div>
+          <span className="font-mono text-[11px] text-silver-300">round {st.round}{rounds ? ` / ${rounds}` : ''}</span>
+          <button className="rounded p-1.5 text-silver-700 hover:text-silver-100" title="Fit view" aria-label="Fit view" onClick={() => rendRef.current?.fit()}><Maximize2 size={14} /></button>
+          {live && live.status === 'running' && <button className="btn btn-ghost !px-2.5 !py-1 text-[11px]" onClick={() => live.onStop?.()} title="Cancel this run (stops spending tokens)">Stop run</button>}
+        </div>
+      )}
+
+      {/* full transport controls (hidden unless asked for) */}
+      {!compact && showControls && (
         <div className="absolute inset-x-4 bottom-4 rounded-2xl panel px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-1.5">
@@ -258,6 +279,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
             </div>
             <div className="ml-auto flex items-center gap-2 font-mono text-[11px] text-silver-500">
               <span className={`h-1.5 w-1.5 rounded-full ${ui.playing ? 'animate-pulse bg-cyan' : 'bg-silver-700'}`} />{statusText}
+              <button className="btn btn-ghost !px-2 !py-1 text-[11px]" onClick={() => { setShowControls(false); pb.playing = true }}>hide controls</button>
               {live && live.status === 'running' && <button className="btn btn-ghost !px-2 !py-1 text-[11px]" onClick={() => live.onStop?.()}>Stop run</button>}
             </div>
           </div>
