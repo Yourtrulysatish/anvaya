@@ -73,8 +73,9 @@ class RateLimiter:
 # Preference hints used only when a task has no explicit model. They are matched against the *live* catalogue;
 # nothing here is assumed to exist.
 _PREFER = {
-    "reasoning": ["opus-5-5", "opus-5", "sonnet-5-5", "gpt-6", "gemini-3.1-pro", "kimi-k3"],
-    "report": ["opus-5-5", "sonnet-5-5", "opus-5", "gpt-6", "gemini-3.1-pro"],
+    # strong-but-economical defaults; premium models (e.g. Opus) can be chosen explicitly in Settings
+    "reasoning": ["sonnet-5-5", "gemini-3.1-pro", "kimi-k3", "opus-5-5", "gpt-6"],
+    "report": ["sonnet-5-5", "gemini-3.1-pro", "opus-5-5", "gpt-6"],
     "agent": ["gemini-3.7-flash", "deepseek-v4.1-flash", "glm-5.3-flash", "deepseek-v4-flash"],
     "extraction": ["gemini-3.7-flash", "deepseek-v4.1-flash", "glm-5.3-flash", "qwen3.7-max"],
     "summarisation": ["glm-5.3-flash", "deepseek-v4.1-flash", "gemini-3.7-flash"],
@@ -191,7 +192,7 @@ class FreeModelProvider:
             raise ProviderError("payment", "FreeModel balance is empty (HTTP 402).", 402)
         if r.status_code == 429:
             raise ProviderError("rate_limit", msg, 429)
-        if r.status_code in (400, 404) and re.search(r"model", msg or "", re.I):
+        if r.status_code in (400, 404) and re.search(r"model.{0,40}(not found|does not exist|unknown|unavailable|not supported|invalid)|(unknown|invalid|no such) model", msg or "", re.I):
             raise ProviderError("model_unavailable", msg, r.status_code)
         if r.status_code >= 500:
             raise ProviderError("server", msg, r.status_code)

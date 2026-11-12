@@ -146,7 +146,7 @@ class SimulationRun:
             final = e.metrics()
             final["influence"] = e.influence_scores()
             final["final_opinions"] = {str(i): round(a.opinions.get(final["topic"], 0), 3) for i, a in e.agents.items()}
-            final["groups"] = {str(i): a.group for i, a in e.agents.items()}
+            final["agent_groups"] = {str(i): a.group for i, a in e.agents.items()}
             final["group_names"] = {str(k): v for k, v in e.group_names.items()}
             self.status = "stopped" if self._stop else "completed"
             final["status"] = self.status

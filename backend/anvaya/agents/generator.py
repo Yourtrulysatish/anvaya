@@ -152,24 +152,71 @@ async def interpret(description: str, provider, n: int = 120, context: str = "",
     return spec
 
 
-def spec_from_llm(data: dict) -> PopulationSpec:
-    topics = [Topic(t.get("id") or f"t{i+1}", t["label"], t.get("question", ""), t.get("pos_label", "in favour"), t.get("neg_label", "against"))
-              for i, t in enumerate(data["topics"])][:3]
+def _pair(v, default):
+    """Coerce the many shapes models emit for a (mean, sd) pair."""
+    try:
+        if isinstance(v, bool):
+            return default
+        if isinstance(v, (int, float)):
+            return [float(v), 0.15]
+        if isinstance(v, (list, tuple)) and v:
+            return [float(v[0]), float(v[1]) if len(v) > 1 else 0.15]
+        if isinstance(v, dict):
+            m = v.get("mean", v.get("m", v.get("avg")))
+            return [float(m), float(v.get("sd", v.get("std", v.get("stdev", 0.15))))]
+        if isinstance(v, str):
+            return [float(v.strip().rstrip("%")), 0.15]
+    except (TypeError, ValueError):
+        pass
+    return default
+
+
+def _strs(v, limit=8) -> list:
+    if isinstance(v, str):
+        return [v]
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v if isinstance(x, (str, int, float))][:limit]
+    return []
+
+
+def _num(v, default):
+    try:
+        return float(str(v).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        return default
+
+
+def spec_from_llm(data) -> PopulationSpec:
+    if not isinstance(data, dict):
+        raise ValueError("model returned a non-object")
+    raw_topics = [t for t in (data.get("topics") or []) if isinstance(t, dict) and t.get("label")]
+    if not raw_topics or not isinstance(data.get("segments"), list) or not data["segments"]:
+        raise ValueError("model output lacks topics or segments")
+    topics = [Topic(str(t.get("id") or f"t{i+1}"), str(t["label"]), str(t.get("question", "")), str(t.get("pos_label", "in favour")), str(t.get("neg_label", "against")))
+              for i, t in enumerate(raw_topics)][:3]
     segs = []
     for s in data["segments"][:10]:
+        if not isinstance(s, dict) or not s.get("name"):
+            continue
+        traits = s.get("traits") if isinstance(s.get("traits"), dict) else {}
+        sens = s.get("sensitivities") if isinstance(s.get("sensitivities"), dict) else {}
+        op = s.get("opinion") if isinstance(s.get("opinion"), dict) else {}
         segs.append(SegmentSpec(
-            name=s["name"], share=float(s.get("share", 1)), description=s.get("description", ""),
-            traits={k: v for k, v in (s.get("traits") or {}).items() if k in TRAIT_KEYS},
-            sensitivities=s.get("sensitivities") or {}, opinion=s.get("opinion") or {},
-            activity=s.get("activity") or [0.3, 0.12], influence=s.get("influence") or [0.25, 0.2],
-            goals=s.get("goals") or [], beliefs=s.get("beliefs") or [], occupations=s.get("occupations") or [],
-            locations=s.get("locations") or [], age=s.get("age") or [30, 8],
-            first_names=s.get("first_names") or [], last_names=s.get("last_names") or []))
+            name=str(s["name"]), share=_num(s.get("share", 1), 1.0), description=str(s.get("description", "")),
+            traits={k: _pair(v, [0.5, 0.2]) for k, v in traits.items() if k in TRAIT_KEYS},
+            sensitivities={str(k): _pair(v, [0.5, 0.2]) for k, v in list(sens.items())[:6]},
+            opinion={str(k): _pair(v, [0.0, 0.35]) for k, v in op.items()},
+            activity=_pair(s.get("activity"), [0.3, 0.12]), influence=_pair(s.get("influence"), [0.25, 0.2]),
+            goals=_strs(s.get("goals")), beliefs=_strs(s.get("beliefs")), occupations=_strs(s.get("occupations")),
+            locations=_strs(s.get("locations")), age=_pair(s.get("age"), [30, 8]),
+            first_names=_strs(s.get("first_names"), 20), last_names=_strs(s.get("last_names"), 20)))
+    if not segs:
+        raise ValueError("no usable segments")
     ids = {t.id for t in topics}
     for s in segs:
         s.opinion = {k: v for k, v in s.opinion.items() if k in ids}
-    return PopulationSpec(data.get("title", "Population"), data.get("description", ""), topics, segs,
-                          data.get("assumptions", []), int(data.get("suggested_rounds", 20) or 20))
+    return PopulationSpec(str(data.get("title", "Population")), str(data.get("description", "")), topics, segs,
+                          _strs(data.get("assumptions"), 20), int(_num(data.get("suggested_rounds", 20), 20)))
 
 
 def interpret_offline(description: str) -> PopulationSpec:
