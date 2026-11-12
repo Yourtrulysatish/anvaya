@@ -138,7 +138,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
       {/* top-left: title + mode switch */}
       <div className="pointer-events-none absolute left-4 top-4 flex flex-col gap-3">
         <div className="flex items-center gap-2">
-          <span className={`rounded px-2 py-0.5 font-mono text-[10px] tracking-[0.18em] ${dataset.meta.label === 'DEMO' ? 'bg-gold/15 text-gold' : 'bg-cyan/15 text-cyan'}`}>{dataset.meta.label}</span>
+          <span className={`rounded px-2 py-0.5 font-mono text-[10px] tracking-[0.18em] ${dataset.meta.synthetic ? 'bg-gold/15 text-gold' : 'bg-cyan/15 text-cyan'}`}>{dataset.meta.label}</span>
           {!compact && <span className="text-sm text-silver-300">{dataset.meta.title}</span>}
         </div>
         {!compact && (
@@ -153,7 +153,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
 
       {/* HUD */}
       {!compact && (
-        <div className="pointer-events-none absolute left-4 top-[7.4rem] hidden w-64 flex-col gap-2 lg:flex">
+        <div className="absolute left-4 top-[7.4rem] hidden max-h-[calc(100%-12rem)] w-64 flex-col gap-2 overflow-y-auto lg:flex">
           <div className="panel rounded-xl p-3">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               <Stat k="Round" v={`${st.round}${rounds ? ` / ${rounds}` : ''}`} />
@@ -181,7 +181,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
           {m?.market && <MarketPanel mk={m.market} />}
           {dataset.meta.synthetic && (
             <div className="rounded-lg border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] leading-relaxed text-silver-300">
-              Synthetic demonstration. Agents, text and the round-9 price cut come from a seeded model: no LLM, no real people, not a forecast.
+              {dataset.meta.note ?? 'Synthetic demonstration. Agents, text and the round-9 price cut come from a seeded model: no LLM, no real people, not a forecast.'}
             </div>
           )}
         </div>
@@ -217,7 +217,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
             })}
           </div>
           <div ref={feedRef} className="flex-1 space-y-px overflow-y-auto px-2 py-2">
-            {shown.length === 0 && <div className="p-4 text-xs text-silver-500">Press play. Events appear here as the recorded simulation unfolds.</div>}
+            {shown.length === 0 && <div className="p-4 text-xs text-silver-500">Events appear here as the simulation unfolds.</div>}
             {shown.map(ev => ev.type === 'round_start' ? (
               <div key={ev.id} className="label flex items-center gap-2 px-2 pb-1 pt-3"><span>Round {String(ev.round).padStart(2, '0')}</span><i className="h-px flex-1 bg-line" /></div>
             ) : (
@@ -252,7 +252,7 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
       {!compact && !showControls && (
         <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl panel px-4 py-2.5">
           <span className="flex items-center gap-2 font-mono text-[11px] tracking-[0.16em] text-cyan"><i className="h-2 w-2 animate-pulse rounded-full bg-cyan" />LIVE</span>
-          <span className="font-mono text-[11px] text-silver-500">{dataset.meta.synthetic ? 'DEMO · continuous replay of recorded synthetic events' : live && live.status === 'running' ? 'simulation running' : live ? `run ${live.status}` : 'replay of recorded events'}</span>
+          <span className="font-mono text-[11px] text-silver-500">{dataset.meta.synthetic ? (dataset.meta.barText ?? 'DEMO · continuous replay of recorded synthetic events') : live && live.status === 'running' ? 'simulation running' : live ? `run ${live.status}` : 'replay of recorded events'}</span>
           <div className="mx-2 h-1 flex-1 overflow-hidden rounded bg-ink-700"><div className="h-1 rounded bg-violet/70" style={{ width: `${ui.total ? (ui.cursor / ui.total) * 100 : 0}%` }} /></div>
           <span className="font-mono text-[11px] text-silver-300">round {st.round}{rounds ? ` / ${rounds}` : ''}</span>
           <button className="rounded p-1.5 text-silver-700 hover:text-silver-100" title="Fit view" aria-label="Fit view" onClick={() => rendRef.current?.fit()}><Maximize2 size={14} /></button>

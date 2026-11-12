@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Compass, FileText, FlaskConical, FolderKanban, Network, Orbit, Plus, Settings } from 'lucide-react'
+import { Compass, FileText, FlaskConical, FolderKanban, Globe, Network, Orbit, Plus, Settings } from 'lucide-react'
 import { Wordmark } from './Logo'
 
 const NAV = [
@@ -7,6 +7,7 @@ const NAV = [
   { to: '/new', label: 'New Analysis', icon: Plus },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/universe', label: 'Simulation Universe', icon: Orbit },
+  { to: '/vegeta', label: 'Vegeta × Nederland', icon: Globe },
   { to: '/graph', label: 'Knowledge Graph', icon: Network },
   { to: '/lab', label: 'Scenario Lab', icon: FlaskConical },
   { to: '/reports', label: 'Reports', icon: FileText },

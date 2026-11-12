@@ -17,6 +17,7 @@ export default function App() {
         <Route element={<Shell />}>
           <Route index element={<HomePage />} />
           <Route path="universe" element={<UniversePage />} />
+          <Route path="vegeta" element={<UniversePage initial="vegeta" />} />
           <Route path="graph" element={<GraphPage />} />
           <Route path="lab" element={<LabPage />} />
           <Route path="reports" element={<ReportsPage />} />

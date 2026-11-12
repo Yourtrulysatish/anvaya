@@ -57,6 +57,8 @@ export interface DatasetMeta {
   generator?: string
   assumptions?: string[]
   simulationId?: string
+  note?: string      // disclaimer shown in the HUD
+  barText?: string   // status-bar caption
 }
 
 export interface Dataset {

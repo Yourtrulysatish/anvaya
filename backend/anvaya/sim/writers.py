@@ -24,6 +24,9 @@ REPLY_NEUTRAL = ["Interesting, {t} —", "{t}, partly true, but", "Hmm {t}, thou
 SHARE = ["Worth a read:", "Passing this on —", "This matches my experience:", "Sharing because it matters:"]
 
 
+STANCE_WORDS = {"strong_for": "firmly in favour", "for": "leaning in favour", "mixed": "undecided", "against": "leaning against", "strong_against": "firmly against"}
+
+
 def stance_bucket(x: float) -> str:
     return "strong_for" if x > 0.6 else "for" if x > 0.2 else "against" if x < -0.2 and x >= -0.6 else "strong_against" if x < -0.6 else "mixed"
 
@@ -42,21 +45,23 @@ class TemplateWriter:
     def text_for(self, it: Intent, rnd: int) -> str:
         a: Agent = self.e.agents[it.source]
         rng = random.Random(self.e.cfg.seed * 7919 + rnd * 131 + a.id)
-        topic = self.e.topics[it.topic]
-        clause = topic.pos_label if it.stance > 0.15 else topic.neg_label if it.stance < -0.15 else "undecided"
-        hooks = a.goals + a.beliefs
-        hook = _frag(rng.choice(hooks)) if hooks else a.segment
+        bucket = stance_bucket(it.stance)
+        stance = STANCE_WORDS[bucket]
+        pool = [("goal", g) for g in a.goals] + [("belief", b) for b in a.beliefs]
+        kind, hook = rng.choice(pool) if pool else ("seg", a.segment)
+        hook = _frag(hook)
+        hook = hook if hook.startswith(("I ", "I'")) or hook[1:2].isupper() else hook[:1].lower() + hook[1:]     # keep the pronoun "I" capitalised
+        lead = {"goal": f"my priority is to {hook}", "belief": f"I keep coming back to this: {hook}", "seg": f"speaking as part of {hook}"}[kind]
         if it.type == "post":
-            op = rng.choice(OPEN_POST[stance_bucket(it.stance)])
-            return f"{op} As someone who cares about {hook.lower()}, I'm {clause}."
+            return f"{rng.choice(OPEN_POST[bucket])} {lead[0].upper() + lead[1:]}, so I'm {stance}."
         tname = self.e.agents[it.target].name.split()[0] if it.target is not None else "friend"
         if it.type == "agree":
-            return f"{rng.choice(REPLY_AGREE).format(t=tname)} {hook.lower()} is why I'm {clause} too."
+            return f"{rng.choice(REPLY_AGREE).format(t=tname)} {lead}, so I'm {stance} too."
         if it.type == "disagree":
-            return f"{rng.choice(REPLY_DISAGREE).format(t=tname)} for me, {hook.lower()} matters more, so I'm {clause}."
+            return f"{rng.choice(REPLY_DISAGREE).format(t=tname)} {lead}, so I'm {stance}."
         if it.type == "share":
-            return f"{rng.choice(SHARE)} {tname}'s take on “{topic.label}” fits what I think ({clause})."
-        return f"{rng.choice(REPLY_NEUTRAL).format(t=tname)} given {hook.lower()}, I'm {clause}."
+            return f"{rng.choice(SHARE)} {tname}'s take fits where I stand ({stance})."
+        return f"{rng.choice(REPLY_NEUTRAL).format(t=tname)} {lead}, I'm {stance}."
 
     async def write(self, intents: list[Intent], rnd: int):
         for it in intents:
