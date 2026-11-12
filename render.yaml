@@ -1,0 +1,23 @@
+# Render Blueprint. Create via Dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: anvaya-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter            # a persistent disk requires a paid instance
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: anvaya-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: FREEMODEL_API_KEY
+        sync: false          # you paste it in the Render dashboard; it is never stored in git
+      - key: ANVAYA_CORS_ORIGINS
+        value: https://yourtrulysatish.github.io
+      - key: ANVAYA_DATA_DIR
+        value: /data
+      - key: ANVAYA_ALLOW_REGISTRATION
+        value: "true"

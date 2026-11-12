@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../../lib/api'
 import { ErrorNote, useAsync } from '../../components/ui'
@@ -14,6 +14,8 @@ export function SimulationTab({ network }: { network?: boolean }) {
   const [delib, setDelib] = useState(4); const [calls, setCalls] = useState(0); const [seed, setSeed] = useState(7); const [adv, setAdv] = useState(false); const [err, setErr] = useState<unknown>(null); const [busy, setBusy] = useState(false)
   const [panel, setPanel] = useState(project.simulations.length === 0)
   const llm = health.data?.llm_configured
+  const anyRunning = project.simulations.some((s: any) => s.status === 'running' || s.status === 'created')
+  useEffect(() => { if (!anyRunning) return; const t = setInterval(reload, 4000); return () => clearInterval(t) }, [anyRunning, reload])
   const start = async () => {
     setBusy(true); setErr(null)
     try { const r = await api(`/projects/${id}/simulations`, { body: { population_id: pop, rounds, seed, use_llm: useLlm && !!llm, llm_agents_per_round: useLlm ? delib : 0, budget_calls: calls, name: `Run ${project.simulations.length + 1}` } }); reload(); setSp({ sim: r.id }); setPanel(false) }
