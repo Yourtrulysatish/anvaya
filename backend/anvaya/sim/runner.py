@@ -30,13 +30,13 @@ class Budget:
 
 class SimulationRun:
     def __init__(self, agents: list[Agent], cfg: SimConfig, *, store: Optional[Store] = None, provider=None,
-                 use_llm: bool = False, project_id: str = None, budget: Optional[Budget] = None, round_delay: float = 0.0):
+                 use_llm: bool = False, project_id: str = None, budget: Optional[Budget] = None, round_delay: float = 0.0, llm_text_per_round: int = 0):
         self.cfg, self.store, self.project_id = cfg, store, project_id
         self.engine = Engine(agents, cfg)
         self.use_llm = use_llm and provider is not None
         self.provider = provider
         self.budget = budget or Budget(provider=provider)
-        self.writer = LLMWriter(self.engine, provider, project_id, budget=self.budget) if self.use_llm else TemplateWriter(self.engine)
+        self.writer = LLMWriter(self.engine, provider, project_id, budget=self.budget, max_items=llm_text_per_round) if self.use_llm else TemplateWriter(self.engine)
         self.round_delay = round_delay
         self.events: list[dict] = []
         self._pending: list[dict] = []

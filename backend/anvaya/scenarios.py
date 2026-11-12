@@ -102,6 +102,7 @@ def _sens_keys(pop: dict) -> list[str]:
 def validate_shocks(raw: list, pop: dict, rounds: int) -> list[dict]:
     segs = {s["name"] for s in pop["spec"]["segments"]}
     sens = set(_sens_keys(pop))
+    topics = {t["id"] for t in pop["spec"]["topics"]}
     topic = pop["spec"]["topics"][0]["id"]
     out = []
     for s in raw or []:
@@ -123,7 +124,7 @@ def validate_shocks(raw: list, pop: dict, rounds: int) -> list[dict]:
         except (TypeError, ValueError):
             rnd = max(2, rounds // 3)
         out.append({"round": rnd, "label": str(s.get("label", "External event"))[:160], "description": str(s.get("description", ""))[:400],
-                    "topic": s.get("topic") if s.get("topic") == topic else topic, "effects": effs, "reach": max(0.05, min(1.0, float(s.get("reach", 1.0)))), "assumption": True})
+                    "topic": s.get("topic") if s.get("topic") in topics else topic, "salience_boost": max(0.0, min(3.0, float(s.get("salience_boost", 0) or 0))), "effects": effs, "reach": max(0.05, min(1.0, float(s.get("reach", 1.0)))), "assumption": True})
     return out
 
 

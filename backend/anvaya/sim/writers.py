@@ -72,8 +72,9 @@ def _stance_words(x: float) -> str:
 class LLMWriter:
     source = "llm"
 
-    def __init__(self, engine: Engine, provider, project_id: str = None, batch: int = 10, budget=None):
+    def __init__(self, engine: Engine, provider, project_id: str = None, batch: int = 10, budget=None, max_items: int = 0):
         self.e, self.p, self.project_id, self.batch, self.budget = engine, provider, project_id, batch, budget
+        self.max_items = max_items          # 0 = LLM writes every message; k = only the k most influential speakers per round
         self.fallback = TemplateWriter(engine)
         self.warnings: list[str] = []
         self.model: Optional[str] = None
@@ -107,10 +108,13 @@ class LLMWriter:
 
     async def write(self, intents: list[Intent], rnd: int):
         todo = [(i, it) for i, it in enumerate(intents) if not it.text]
+        if self.max_items and len(todo) > self.max_items:
+            todo.sort(key=lambda t: -self.e.agents[t[1].source].influence)
+            todo = todo[: self.max_items]            # the rest fall through to the labelled template writer
         if self.budget and self.budget.exhausted():
             self.warnings.append("LLM budget exhausted – template text used")
         else:
-            chunks = [todo[k:k + self.batch] for k in range(0, len(todo), self.batch)]
+            chunks = [todo[k:k + max(self.batch, self.max_items or 0)] for k in range(0, len(todo), max(self.batch, self.max_items or 0))]
             res = await asyncio.gather(*[self._write_batch(rnd, c) for c in chunks], return_exceptions=True)
             for r in res:
                 if isinstance(r, Exception):

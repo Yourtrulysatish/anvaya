@@ -420,6 +420,48 @@ async def generate_population(pid: str, p: PopIn, user=User):
     return start_job("population", pid, user["id"], job)
 
 
+class PopImport(BaseModel):
+    spec: dict
+    n: int = Field(default=120, ge=5, le=2000)
+    seed: int = 1
+    enrich: bool = False
+    description: str = Field(default="", max_length=8000)
+
+
+@router.post("/projects/{pid}/populations/import")
+async def import_population(pid: str, p: PopImport, user=User):
+    """Build a population from an explicit spec (same JSON shape as a generated spec). Segments may set `count` and `fixed_names`."""
+    own_project(pid, user)
+    try:
+        spec = generator.PopulationSpec.from_dict({**p.spec, "basis": p.spec.get("basis", "user")})
+        if not spec.topics or not spec.segments:
+            raise ValueError("spec needs topics and segments")
+    except (KeyError, TypeError, ValueError) as e:
+        raise HTTPException(422, f"Invalid population spec: {e}")
+    n = min(max(p.n, sum(s.count or 0 for s in spec.segments)), settings.max_agents)
+    enrich = p.enrich and settings.llm_configured
+    if enrich: _quota(user)
+
+    async def job(update):
+        agents = generator.sample(spec, n, p.seed)
+        warnings, enriched = [], 0
+        if enrich:
+            update(0.4, "Writing individual personas…")
+            enriched = await generator.enrich_personas(agents, spec, provider, pid)
+            if enriched < len(agents): warnings.append(f"{len(agents) - enriched} agents kept template personas.")
+        for a in agents:
+            a.attributes_basis = "user" if spec.basis == "user" else a.attributes_basis
+        pop_id = new_id("pop")
+        counts: dict = {}
+        for a in agents: counts[a.segment] = counts.get(a.segment, 0) + 1
+        pop = {"spec": spec.to_dict(), "agents": [asdict(a) for a in agents], "n": len(agents), "basis": spec.basis, "enriched": enriched,
+               "segments": [{"name": sg.name, "share": counts.get(sg.name, 0) / len(agents), "count": counts.get(sg.name, 0), "description": sg.description} for sg in spec.segments],
+               "assumptions": spec.assumptions, "warnings": warnings, "description": p.description or spec.description}
+        get_store().put("population", pop_id, pop, user["id"], pid)
+        return {"population_id": pop_id, "n": len(agents), "basis": spec.basis, "warnings": warnings}
+    return start_job("population", pid, user["id"], job)
+
+
 def _get_pop(pid: str, pop_id: str) -> dict:
     pop = get_store().get("population", pop_id)
     if not pop or pop["_project"] != pid:
@@ -488,6 +530,8 @@ class SimIn(BaseModel):
     budget_tokens: int = Field(default=0, ge=0, le=5_000_000)
     scenario_id: Optional[str] = None
     round_delay: float = Field(default=0.0, ge=0, le=5)
+    max_actions_per_round: int = Field(default=400, ge=5, le=2000)
+    llm_text_per_round: int = Field(default=0, ge=0, le=60)   # 0 = LLM writes every message
 
 
 async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, scenario_id: str = None) -> dict:
@@ -501,11 +545,11 @@ async def _launch(pid: str, user: dict, s: SimIn, shocks: list[dict] = None, sce
     sid = new_id("sim")
     agents = scen.agents_from_pop(pop)
     cfg = SimConfig(sid, seed=s.seed, rounds=rounds, topics=scen.topics_from_pop(pop), shocks=[scen.shock_from_dict(x) for x in (shocks or [])],
-                    llm_agents_per_round=s.llm_agents_per_round if use_llm else 0, mode="native", title=s.name, description=pop.get("description", ""))
+                    llm_agents_per_round=s.llm_agents_per_round if use_llm else 0, max_actions_per_round=s.max_actions_per_round, mode="native", title=s.name, description=pop.get("description", ""))
     budget = Budget(s.budget_calls or (DEFAULT_MAX_CALLS if use_llm else 0), s.budget_tokens, provider if use_llm else None)
-    run = SimulationRun(agents, cfg, store=get_store(), provider=provider if use_llm else None, use_llm=use_llm, project_id=pid, budget=budget, round_delay=s.round_delay)
+    run = SimulationRun(agents, cfg, store=get_store(), provider=provider if use_llm else None, use_llm=use_llm, project_id=pid, budget=budget, round_delay=s.round_delay, llm_text_per_round=s.llm_text_per_round)
     doc = {"name": s.name, "population_id": s.population_id, "status": "created", "config": {"rounds": rounds, "seed": s.seed, "use_llm": use_llm, "llm_agents_per_round": cfg.llm_agents_per_round,
-           "budget_calls": budget.max_calls, "budget_tokens": budget.max_tokens, "shocks": shocks or []}, "agents": [a.public() for a in agents],
+           "budget_calls": budget.max_calls, "budget_tokens": budget.max_tokens, "llm_text_per_round": s.llm_text_per_round, "shocks": shocks or []}, "agents": [a.public() for a in agents],
            "topic": pop["spec"]["topics"][0]["id"], "scenario_id": scenario_id, "mode": "native", "synthetic": False, "label": "LIVE" if use_llm else "SIMULATED (no LLM text)"}
     st = get_store(); st.put("simulation", sid, doc, user["id"], pid)
     RUNS[sid] = run
@@ -664,6 +708,8 @@ class ScenarioIn(BaseModel):
     kind: str = "alternative"
     prompt: str = Field(default="", max_length=600)
     rounds: int = Field(default=20, ge=2, le=100)
+    shocks: Optional[list[dict]] = None          # explicit, user-specified assumptions (skips interpretation)
+    assumptions: list[str] = Field(default_factory=list, max_length=40)
 
 
 @router.post("/projects/{pid}/scenarios/propose")
@@ -679,7 +725,12 @@ async def create_scenario(pid: str, s: ScenarioIn, user=User):
     own_project(pid, user)
     pop = _get_pop(pid, s.population_id)
     shocks, assumptions, method, rationale = [], [], "none", ""
-    if s.prompt.strip() and s.kind != "baseline":
+    if s.shocks is not None:
+        shocks = scen.validate_shocks(s.shocks, pop, s.rounds)
+        if s.shocks and not shocks:
+            raise HTTPException(422, "None of the supplied shocks were valid for this population")
+        assumptions, method = list(s.assumptions), "user-specified"
+    elif s.prompt.strip() and s.kind != "baseline":
         if settings.llm_configured: _quota(user)
         r = await scen.interpret_shock(_llm(), s.prompt, pop, s.rounds, pid)
         shocks, assumptions, method, rationale = r["shocks"], r["assumptions"], r["method"], r.get("rationale", "")
@@ -760,6 +811,8 @@ def delete_scenario(sid: str, user=User):
 class RecIn(BaseModel):
     simulation_id: str
     scenario_ids: list[str] = Field(default_factory=list)
+    count: int = Field(default=4, ge=1, le=12)
+    extra: Optional[dict] = None          # caller-computed tables to ground the recommendations (kept ≤ 12k chars)
 
 
 def _scenario_context(pid: str, ids: list[str]) -> list[dict]:
@@ -767,7 +820,9 @@ def _scenario_context(pid: str, ids: list[str]) -> list[dict]:
     for i in ids:
         sc = get_store().get("scenario", i)
         if sc and sc["_project"] == pid and sc.get("results"):
-            out.append({"id": i, "name": sc["name"], "kind": sc["kind"], "prompt": sc["prompt"], "assumptions": sc.get("assumptions", []), 
+            sm = sc["results"]["summary"]
+            out.append({"id": i, "name": sc["name"], "kind": sc["kind"], "prompt": sc["prompt"], "assumptions": sc.get("assumptions", []),
+                        "outcome_means": {k: sm[k]["mean"] for k in ("mean_opinion", "support_share", "oppose_share", "polarisation")}, 
                         "comparison": sc["results"].get("comparison"), "sensitivity": sc["results"].get("sensitivity")})
     return out
 
@@ -782,9 +837,9 @@ async def make_recommendations(pid: str, r: RecIn, user=User):
     kb = get_store().get("knowledge", pid)
     if settings.llm_configured: _quota(user)
     ctx = {"situation": p.get("situation"), "objectives": p.get("objectives"), "analysis": analysis, "scenarios": _scenario_context(pid, r.scenario_ids),
-           "knowledge_facts": (kb or {}).get("facts", [])}
+           "knowledge_facts": (kb or {}).get("facts", []), "extra": json.dumps(r.extra, default=str)[:12000] if r.extra else None}
     try:
-        res = await decisions.recommend(_llm(), ctx, pid)
+        res = await decisions.recommend(_llm(), ctx, pid, r.count)
     except ProviderError as e:
         raise _perr(e)
     rid = new_id("rec")

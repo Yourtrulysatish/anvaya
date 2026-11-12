@@ -80,6 +80,7 @@ class Shock:
     effects: list = field(default_factory=list)  # [{segment:"*"|name, sensitivity:"price"|None, delta: float}]
     reach: float = 1.0
     assumption: bool = True
+    salience_boost: float = 0.0     # raises how much affected agents talk about `topic`
 
     def to_dict(self):
         return self.__dict__.copy()
@@ -462,8 +463,10 @@ class Engine:
                     sens = a.sensitivities.get(eff["sensitivity"], 0.5) if eff.get("sensitivity") else 1.0
                     delta += eff["delta"] * sens
                 delta *= (1 - 0.6 * a.traits.get("stubbornness", 0.5))
-                if abs(delta) < 0.01:
+                if abs(delta) < 0.01 and not s.salience_boost:
                     continue
+                if s.salience_boost:
+                    a.salience[topic] = a.salience.get(topic, 1.0) + s.salience_boost
                 x = a.opinions.get(topic, 0.0)
                 new = clamp(x + delta)
                 a.opinions[topic] = new
@@ -537,6 +540,7 @@ class Engine:
             "groups": len(groups), "largest_group": max(groups.values()) if groups else 0,
             "modularity": round(self.modularity(), 4), "max_cascade": max(self.cascade_size.values()) if self.cascade_size else 0,
             "interactions_total": self.interactions,
+            "topic_means": {t: round(sum(a.opinions.get(t, 0.0) for a in self.agents.values()) / n, 4) for t in self.topics},
         }
 
     def modularity(self) -> float:

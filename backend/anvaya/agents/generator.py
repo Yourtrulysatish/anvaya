@@ -40,6 +40,9 @@ class SegmentSpec:
     age: list = field(default_factory=lambda: [30, 8])
     first_names: list = field(default_factory=list)
     last_names: list = field(default_factory=list)
+    salience: dict = field(default_factory=dict)       # topic_id -> [mean, sd] (how much agents talk about it)
+    count: Optional[int] = None          # exact number of agents (otherwise derived from `share`)
+    fixed_names: list = field(default_factory=list)   # use these names in order (e.g. named organisations)
 
 
 @dataclass
@@ -71,18 +74,22 @@ def _g(rng: random.Random, ms, lo=0.0, hi=1.0) -> float:
 
 def sample(spec: PopulationSpec, n: int, seed: int = 1) -> list[Agent]:
     rng = random.Random(seed)
-    total = sum(s.share for s in spec.segments) or 1
-    counts = [max(1, round(n * s.share / total)) for s in spec.segments]
-    while sum(counts) > n:
-        counts[counts.index(max(counts))] -= 1
-    while sum(counts) < n:
-        counts[counts.index(min(counts))] += 1
+    fixed = sum(s.count for s in spec.segments if s.count)
+    flex = [s for s in spec.segments if not s.count]
+    total = sum(s.share for s in flex) or 1
+    left = max(0, n - fixed)
+    counts = [s.count if s.count else max(1, round(left * s.share / total)) for s in spec.segments]
+    target = fixed + left if flex else sum(counts)
+    while sum(counts) > target and any(not s.count and c > 1 for s, c in zip(spec.segments, counts)):
+        i = max((k for k, s in enumerate(spec.segments) if not s.count), key=lambda k: counts[k]); counts[i] -= 1
+    while sum(counts) < target and flex:
+        i = min((k for k, s in enumerate(spec.segments) if not s.count), key=lambda k: counts[k]); counts[i] += 1
     agents, aid, used = [], 0, set()
     for seg, c in zip(spec.segments, counts):
-        for _ in range(c):
+        for idx in range(c):
             first = rng.choice(seg.first_names or GENERIC_FIRST)
             last = rng.choice(seg.last_names or GENERIC_LAST)
-            name = f"{first} {last}"
+            name = seg.fixed_names[idx % len(seg.fixed_names)] if seg.fixed_names else f"{first} {last}"
             k = 2
             while name in used:
                 name = f"{first} {last} {k}"; k += 1
@@ -99,7 +106,7 @@ def sample(spec: PopulationSpec, n: int, seed: int = 1) -> list[Agent]:
                 traits=traits, sensitivities=sens, activity=round(_g(rng, seg.activity, 0.05, 0.9), 3), influence=round(infl, 3),
                 goals=rng.sample(seg.goals, min(len(seg.goals), 2)) if seg.goals else [],
                 beliefs=rng.sample(seg.beliefs, min(len(seg.beliefs), 2)) if seg.beliefs else [],
-                opinions=ops, salience={t.id: round(rng.uniform(0.6, 1.4), 2) for t in spec.topics},
+                opinions=ops, salience={t.id: round(max(0.02, _g(rng, seg.salience[t.id], 0.02, 3.0)) if t.id in seg.salience else rng.uniform(0.6, 1.4), 2) for t in spec.topics},
                 attributes_basis=spec.basis if spec.basis in ("document", "demo") else "assumption")
             ag.persona = template_persona(ag, seg)
             agents.append(ag)
@@ -195,7 +202,7 @@ def spec_from_llm(data) -> PopulationSpec:
     topics = [Topic(str(t.get("id") or f"t{i+1}"), str(t["label"]), str(t.get("question", "")), str(t.get("pos_label", "in favour")), str(t.get("neg_label", "against")))
               for i, t in enumerate(raw_topics)][:3]
     segs = []
-    for s in data["segments"][:10]:
+    for s in data["segments"][:20]:
         if not isinstance(s, dict) or not s.get("name"):
             continue
         traits = s.get("traits") if isinstance(s.get("traits"), dict) else {}
@@ -209,7 +216,8 @@ def spec_from_llm(data) -> PopulationSpec:
             activity=_pair(s.get("activity"), [0.3, 0.12]), influence=_pair(s.get("influence"), [0.25, 0.2]),
             goals=_strs(s.get("goals")), beliefs=_strs(s.get("beliefs")), occupations=_strs(s.get("occupations")),
             locations=_strs(s.get("locations")), age=_pair(s.get("age"), [30, 8]),
-            first_names=_strs(s.get("first_names"), 20), last_names=_strs(s.get("last_names"), 20)))
+            first_names=_strs(s.get("first_names"), 20), last_names=_strs(s.get("last_names"), 20),
+            count=int(_num(s.get("count"), 0)) or None, fixed_names=_strs(s.get("fixed_names"), 40)))
     if not segs:
         raise ValueError("no usable segments")
     ids = {t.id for t in topics}

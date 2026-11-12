@@ -47,7 +47,7 @@ export function Inspector({ pb, agentId, agents, topic, tick, synthetic, intervi
       <div className="flex items-start justify-between gap-3 border-b hairline p-4">
         <div>
           <div className="flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full" style={{ background: opinionColor(op) }} /><h3 className="text-base font-semibold">{a.name}</h3></div>
-          <div className="mt-0.5 text-xs text-silver-500">{a.segment} · {a.age} · {a.occupation}{a.location ? ` · ${a.location}` : ''}</div>
+          <div className="mt-0.5 text-xs text-silver-500">{a.segment}{a.age ? ` · ${a.age}` : ''} · {a.occupation}{a.location ? ` · ${a.location}` : ''}</div>
           <div className="mt-2 inline-flex rounded border border-violet/30 bg-violet/10 px-1.5 py-0.5 font-mono text-[9.5px] tracking-widest text-violet-soft">SIMULATED AGENT · NOT A REAL PERSON</div>
         </div>
         <button onClick={onClose} aria-label="Close inspector" className="rounded-md p-1 text-silver-500 hover:text-white"><X size={16} /></button>

@@ -146,3 +146,21 @@ def test_mirofish_import_endpoint(client):
 def test_rate_limit_on_auth(client):
     codes = [client.post("/api/auth/login", json={"email": "x@y.zz", "password": "nope"}).status_code for _ in range(16)]
     assert 429 in codes
+
+
+def test_import_spec_named_agents_fixed_counts_and_explicit_shocks(client):
+    h = auth(client)
+    pid = client.post("/api/projects", json={"name": "Spec"}, headers=h).json()["id"]
+    t = {"id": "t1", "label": "Accept the product", "question": "q", "pos_label": "accept", "neg_label": "reject"}
+    seg = lambda name, **kw: {"name": name, "share": 0.5, "description": name, "sensitivities": {"price": [0.5, 0.1]}, "opinion": {"t1": [0.0, 0.2]}, **kw}
+    spec = {"title": "S", "description": "d", "topics": [t], "segments": [seg("Consumers"), seg("Retailers", count=3, fixed_names=["Alpha Mart", "Beta Shop", "Gamma Store"])], "assumptions": ["a"], "basis": "user"}
+    j = client.post(f"/api/projects/{pid}/populations/import", json={"spec": spec, "n": 30}, headers=h).json()
+    res = wait_job(client, h, j["id"]); assert res["status"] == "done", res
+    pop = client.get(f"/api/projects/{pid}/populations/{res['result']['population_id']}", headers=h).json()
+    names = [a["name"] for a in pop["agents"] if a["segment"] == "Retailers"]
+    assert pop["n"] == 30 and sorted(names) == ["Alpha Mart", "Beta Shop", "Gamma Store"]
+    assert client.post(f"/api/projects/{pid}/populations/import", json={"spec": {"title": "x"}}, headers=h).status_code == 422
+    sc = client.post(f"/api/projects/{pid}/scenarios", headers=h, json={"population_id": res["result"]["population_id"], "name": "Explicit", "kind": "alternative", "prompt": "x", "rounds": 8,
+        "shocks": [{"round": 3, "label": "Price cut", "effects": [{"segment": "Consumers", "sensitivity": "price", "delta": 0.3}, {"segment": "Nope", "delta": 9}]}], "assumptions": ["scripted"]}).json()
+    assert sc["interpretation"] == "user-specified" and sc["shocks"][0]["effects"][0]["delta"] == 0.3
+    assert sc["shocks"][0]["effects"][1] == {"segment": "*", "sensitivity": None, "delta": 0.6}   # unknown segment -> '*', delta clamped
