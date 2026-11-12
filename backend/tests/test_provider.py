@@ -112,3 +112,20 @@ async def test_api_key_never_in_connection_report():
     settings.freemodel_api_key = "super-secret-key"
     out = await p.test_connection(live_call=False)
     assert out["ok"] and "super-secret-key" not in str(out)
+
+
+async def test_truncated_json_is_retried_with_larger_budget():
+    import json
+    calls = []
+
+    def h(req):
+        if req.url.path.endswith("/models"):
+            return httpx.Response(200, json=MODELS)
+        body = json.loads(req.content)
+        calls.append(body["max_tokens"])
+        if len(calls) == 1:
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"a": [1, 2'}, "finish_reason": "length"}], "usage": {}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"a": [1, 2]}'}, "finish_reason": "stop"}], "usage": {}})
+    p = make(h)
+    data, _ = await p.chat_json("agent", [{"role": "user", "content": "x"}], model="tiny-model", max_tokens=3000)
+    assert data == {"a": [1, 2]} and calls == [3000, 6000]

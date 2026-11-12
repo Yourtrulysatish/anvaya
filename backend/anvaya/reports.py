@@ -179,6 +179,9 @@ def to_markdown(rep: dict) -> str:
             if b["sources"]:
                 src = " _(sources: " + "; ".join(x.get("doc", "") + (f" — “{x['quote'][:80]}”" if x.get("quote") else "") for x in b["sources"][:3]) + ")_"
             out.append(f"- **[{b['kind']}]** {b['text'].strip()}{src}")
+            if b.get("table"):
+                t = b["table"]
+                out += ["", "| " + " | ".join(t["header"]) + " |", "|" + "---|" * len(t["header"])] + ["| " + " | ".join(str(c) for c in r) + " |" for r in t["rows"]] + [""]
         out.append("")
     return "\n".join(out)
 
@@ -210,6 +213,14 @@ def to_pdf(rep: dict) -> bytes:
             if b["sources"]:
                 src = " <font size=7 color='#888888'>(" + clean("; ".join(x.get("doc", "") for x in b["sources"][:3])) + ")</font>"
             el.append(Paragraph(f"<font color='{colmap[b['kind']]}'><b>[{b['kind']}]</b></font> {clean(b['text'].strip())}{src}", body))
+            if b.get("table"):
+                from reportlab.platypus import Table, TableStyle
+                t = b["table"]; cell = ParagraphStyle("c", parent=body, fontSize=7, leading=8.5, spaceAfter=0)
+                data = [[Paragraph(f"<b>{clean(str(h))}</b>", cell) for h in t["header"]]] + [[Paragraph(clean(str(c)), cell) for c in r] for r in t["rows"]]
+                tb = Table(data, repeatRows=1, hAlign="LEFT")
+                tb.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cccccc")), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#efeaff")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+                el += [Spacer(1, 3), tb, Spacer(1, 6)]
     doc.build(el)
     return buf.getvalue()
 

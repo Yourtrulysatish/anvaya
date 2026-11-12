@@ -61,14 +61,14 @@ async def recommend(provider, ctx: dict, project_id: str = None, count: int = 4)
     if provider is not None:
         sys = ("You are a decision analyst. Produce about " + str(count) + " recommendations that follow from the MEASURED results provided. Every item must cite the "
                "specific simulation findings or evidence that support it (quote the numbers given). Never claim certainty or probabilities about the real world; "
-               "simulation results are model outputs. List the assumptions each recommendation depends on. Score impact, feasibility, urgency and risk from 1 to 5.")
+               "simulation results are model outputs. List the assumptions each recommendation depends on. Score impact, feasibility, urgency and risk from 1 to 5. Be concise: at most 3 items per list, each under 30 words.")
         user = ("Situation: " + str(ctx.get("situation", "")) + "\nObjectives: " + str(ctx.get("objectives", "")) + "\nSimulation analysis (computed):\n"
-                + json.dumps(ctx["analysis"], default=str)[:7000] + "\nScenario comparisons (computed):\n" + json.dumps(ctx.get("scenarios", []), default=str)[:9000]
+                + json.dumps(ctx["analysis"], default=str)[:4500] + "\nScenario comparisons (computed):\n" + json.dumps(ctx.get("scenarios", []), default=str)[:5000]
                 + ("\nAdditional computed results (use these numbers):\n" + ctx["extra"] if ctx.get("extra") else "") + "\nEvidence facts from sources:\n" + json.dumps(ctx.get("knowledge_facts", [])[:15], default=str)[:2500]
                 + '\nReturn JSON: {"recommendations":[{"action":str,"reasoning":[str],"evidence":[str],"simulation_findings":[str],"benefits":[str],"risks":[str],"tradeoffs":[str],'
                 '"assumptions":[str],"resources":[str],"success_indicators":[str],"scores":{"impact":1-5,"feasibility":1-5,"urgency":1-5,"risk":1-5}}]}')
         try:
-            data, res = await provider.chat_json("reasoning", [{"role": "system", "content": sys}, {"role": "user", "content": user}], temperature=0.4, max_tokens=6000, project_id=project_id)
+            data, res = await provider.chat_json("reasoning", [{"role": "system", "content": sys}, {"role": "user", "content": user}], temperature=0.4, max_tokens=min(15000, 3000 + 1200 * count), project_id=project_id)
             recs = [r for r in (_clean(x) for x in data.get("recommendations", [])) if r]
             if recs:
                 recs.sort(key=lambda r: -r["priority"])

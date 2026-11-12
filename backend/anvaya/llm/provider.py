@@ -224,9 +224,10 @@ class FreeModelProvider:
                 usage = data.get("usage") or {}
                 pt, ct = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
                 rt = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0)
-                if not content.strip() and choice.get("finish_reason") == "length" and body["max_tokens"] < 16000:
-                    # reasoning consumed the whole budget (documented behaviour) -> retry with more room
-                    body["max_tokens"] *= 2
+                truncated = choice.get("finish_reason") == "length" and (not content.strip() or json_mode)
+                if truncated and body["max_tokens"] < 16000:
+                    # reasoning consumed the budget (documented) or JSON was cut off mid-way -> retry with more room
+                    body["max_tokens"] = min(16000, body["max_tokens"] * 2)
                     self._account(project_id, task, model, pt, ct)
                     continue
                 cost = self._account(project_id, task, model, pt, ct)
