@@ -65,8 +65,9 @@ export function Observatory({ dataset, playback, compact, autoplay, live, initia
     let raf = 0, last = performance.now()
     let endedAt = 0
     const loop = (t: number) => {
-      const dt = Math.min(0.05, (t - last) / 1000); last = t
-      pb.tick(dt); if (pb.playing) elapsed.current += dt
+      const real = (t - last) / 1000; last = t
+      // playback follows real elapsed time (capped), so a throttled/backgrounded tab keeps up instead of crawling
+      pb.tick(Math.min(0.5, real)); if (pb.playing) elapsed.current += Math.min(0.5, real)
       // self-running presentation: a finished *replay* restarts after a short beat (a live backend run just waits for new events)
       if (controls === 'live' && !pb.live && pb.total > 1 && pb.atEnd) {
         if (!endedAt) endedAt = t
